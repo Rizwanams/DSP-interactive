@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CT → DT Sampling Explorer</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 900px;
+    margin: 30px auto;
+    padding: 0 20px;
+    color: #222;
+  }
+
+  h1 {
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: #666;
+    margin-bottom: 24px;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 18px;
+  }
+
+  .control {
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  label {
+    font-weight: 600;
+    display: block;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 16px 0;
+  }
+
+  .box {
+    padding: 12px 16px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    background: #f7f7f7;
+    flex: 1 1 180px;
+  }
+
+  .box .label {
+    display: block;
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  .box .number {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .graph-section {
+    margin-top: 22px;
+  }
+
+  .graph-title {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .graph-subtitle {
+    color: #666;
+    font-size: 13px;
+    margin: 4px 0 8px;
+  }
+
+  svg {
+    width: 100%;
+    height: auto;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    background: white;
+  }
+
+  .message {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: #f5f5f5;
+    color: #555;
+  }
+
+  @media (max-width: 650px) {
+    .controls {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+
+<body>
+
+<h1>CT → DT Sampling Explorer</h1>
+<div class="subtitle">
+  Change the signal frequency and sampling frequency and observe what happens.
+</div>
+
+<div class="controls">
+
+  <div class="control">
+    <label>
+      Signal frequency F =
+      <span id="freqValue">5.0</span> Hz
+    </label>
+
+    <input
+      id="freq"
+      type="range"
+      min="1"
+      max="20"
+      step="0.5"
+      value="5"
+    >
+  </div>
+
+  <div class="control">
+    <label>
+      Sampling frequency Fs =
+      <span id="fsValue">20</span> Hz
+    </label>
+
+    <input
+      id="fs"
+      type="range"
+      min="5"
+      max="50"
+      step="1"
+      value="20"
+    >
+  </div>
+
+</div>
+
+<div class="values">
+
+  <div class="box">
+    <span class="label">Normalized frequency</span>
+    <span class="number" id="normalized">0.250</span>
+    cycles/sample
+  </div>
+
+  <div class="box">
+    <span class="label">Angular frequency</span>
+    <span class="number" id="omega">0.500π</span>
+    rad/sample
+  </div>
+
+  <div class="box">
+    <span class="label">Samples per cycle</span>
+    <span class="number" id="samplesPerCycle">4.00</span>
+  </div>
+
+</div>
+
+<div class="graph-section">
+
+  <div class="graph-title">Continuous-time signal x(t)</div>
+  <div class="graph-subtitle">
+    Fixed time window: 0 to 1 second. Green points show the sampling instants.
+  </div>
+
+  <svg id="continuousGraph" viewBox="0 0 720 210"></svg>
+
+</div>
+
+<div class="graph-section">
+
+  <div class="graph-title">Discrete-time signal x[n]</div>
+  <div class="graph-subtitle">
+    Samples taken at t = n / Fs
+  </div>
+
+  <svg id="discreteGraph" viewBox="0 0 720 210"></svg>
+
+</div>
+
+<div class="message" id="message"></div>
+
+<script>
+
+const freqSlider = document.getElementById("freq");
+const fsSlider = document.getElementById("fs");
+
+const freqValue = document.getElementById("freqValue");
+const fsValue = document.getElementById("fsValue");
+
+const normalizedDisplay = document.getElementById("normalized");
+const omegaDisplay = document.getElementById("omega");
+const samplesDisplay = document.getElementById("samplesPerCycle");
+
+const continuousGraph = document.getElementById("continuousGraph");
+const discreteGraph = document.getElementById("discreteGraph");
+
+const message = document.getElementById("message");
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function createSVGElement(type, attributes) {
+
+  const element = document.createElementNS(SVG_NS, type);
+
+  for (const key in attributes) {
+    element.setAttribute(key, attributes[key]);
+  }
+
+  return element;
+}
+
+function addText(svg, x, y, textContent) {
+
+  const text = createSVGElement("text", {
+    x: x,
+    y: y,
+    "text-anchor": "middle",
+    "font-size": "11",
+    fill: "#666"
+  });
+
+  text.textContent = textContent;
+  svg.appendChild(text);
+}
+
+function drawAxis(svg) {
+
+  const left = 40;
+  const right = 708;
+  const middle = 105;
+
+  svg.appendChild(
+    createSVGElement("line", {
+      x1: left,
+      y1: middle,
+      x2: right,
+      y2: middle,
+      stroke: "#999"
+    })
+  );
+
+  for (let i = 0; i <= 10; i++) {
+
+    const x = left + (668 * i / 10);
+
+    svg.appendChild(
+      createSVGElement("line", {
+        x1: x,
+        y1: middle - 5,
+        x2: x,
+        y2: middle + 5,
+        stroke: "#aaa"
+      })
+    );
+
+    addText(
+      svg,
+      x,
+      130,
+      (i / 10).toFixed(1) + " s"
+    );
+  }
+}
+
+function drawContinuousSignal(F, Fs) {
+
+  continuousGraph.replaceChildren();
+
+  drawAxis(continuousGraph);
+
+  const left = 40;
+  const width = 668;
+  const middle = 105;
+
+  /*
+    Draw x(t) = cos(2πFt)
+    The time axis is ALWAYS 0 to 1 second.
+    Therefore changing F changes the number of cycles
+    visible in the same time window.
+  */
+
+  let path = "";
+
+  for (let i = 0; i <= 800; i++) {
+
+    const t = i / 800;
+
+    const x = left + width * t;
+
+    const value =
+      Math.cos(2 * Math.PI * F * t);
+
+    const y =
+      middle - 72 * value;
+
+    path +=
+      (i === 0 ? "M" : "L") +
+      x.toFixed(2) +
+      "," +
+      y.toFixed(2);
+  }
+
+  continuousGraph.appendChild(
+    createSVGElement("path", {
+      d: path,
+      fill: "none",
+      stroke: "#2563eb",
+      "stroke-width": "2.5"
+    })
+  );
+
+  /*
+    Draw the sampling points on top of x(t).
+  */
+
+  for (let n = 0; n <= Fs; n++) {
+
+    const t = n / Fs;
+
+    if (t > 1) break;
+
+    const x = left + width * t;
+
+    const value =
+      Math.cos(2 * Math.PI * F * t);
+
+    const y =
+      middle - 72 * value;
+
+    continuousGraph.appendChild(
+      createSVGElement("line", {
+        x1: x,
+        y1: middle,
+        x2: x,
+        y2: y,
+        stroke: "#16a34a",
+        "stroke-width": "1.5",
+        opacity: "0.65"
+      })
+    );
+
+    continuousGraph.appendChild(
+      createSVGElement("circle", {
+        cx: x,
+        cy: y,
+        r: 4,
+        fill: "#16a34a"
+      })
+    );
+  }
+}
+
+function drawDiscreteSignal(F, Fs) {
+
+  discreteGraph.replaceChildren();
+
+  drawAxis(discreteGraph);
+
+  const left = 40;
+  const width = 668;
+  const middle = 105;
+
+  /*
+    x[n] = cos(ωn)
+
+    where
+
+    ω = 2πF/Fs
+  */
+
+  const omega =
+    2 * Math.PI * F / Fs;
+
+  const numberOfSamples =
+    Math.min(Math.floor(Fs) + 1, 41);
+
+  for (let n = 0; n < numberOfSamples; n++) {
+
+    const t = n / Fs;
+
+    if (t > 1) break;
+
+    const x = left + width * t;
+
+    const value =
+      Math.cos(omega * n);
+
+    const y =
+      middle - 72 * value;
+
+    discreteGraph.appendChild(
+      createSVGElement("line", {
+        x1: x,
+        y1: middle,
+        x2: x,
+        y2: y,
+        stroke: "#16a34a",
+        "stroke-width": "2"
+      })
+    );
+
+    discreteGraph.appendChild(
+      createSVGElement("circle", {
+        cx: x,
+        cy: y,
+        r: 4.5,
+        fill: "#16a34a"
+      })
+    );
+
+    const label =
+      createSVGElement("text", {
+        x: x,
+        y: 146,
+        "text-anchor": "middle",
+        "font-size": "10",
+        fill: "#666"
+      });
+
+    label.textContent = "n=" + n;
+
+    discreteGraph.appendChild(label);
+  }
+}
+
+function formatOmegaAsPi(omega) {
+
+  const ratio = omega / Math.PI;
+
+  if (Math.abs(ratio) < 0.000001) {
+    return "0";
+  }
+
+  return ratio.toFixed(3) + "π";
+}
+
+function update() {
+
+  const F = Number(freqSlider.value);
+  const Fs = Number(fsSlider.value);
+
+  /*
+    Normalized frequency:
+        f = F / Fs
+
+    Angular frequency:
+        ω = 2πf
+  */
+
+  const normalizedFrequency = F / Fs;
+
+  const omega =
+    2 * Math.PI * normalizedFrequency;
+
+  const samplesPerCycle =
+    Fs / F;
+
+  freqValue.textContent =
+    F.toFixed(1);
+
+  fsValue.textContent =
+    Fs.toFixed(0);
+
+  normalizedDisplay.textContent =
+    normalizedFrequency.toFixed(3);
+
+  omegaDisplay.textContent =
+    formatOmegaAsPi(omega);
+
+  samplesDisplay.textContent =
+    samplesPerCycle.toFixed(2);
+
+  drawContinuousSignal(F, Fs);
+
+  drawDiscreteSignal(F, Fs);
+
+  if (normalizedFrequency > 0.5) {
+
+    message.textContent =
+      "⚠ F > Fs/2: this is above the Nyquist frequency. Aliasing occurs.";
+
+  } else {
+
+    message.textContent =
+      "F ≤ Fs/2: the signal is within the Nyquist limit.";
+  }
+}
+
+freqSlider.addEventListener("input", update);
+fsSlider.addEventListener("input", update);
+
+update();
+
+</script>
+
+</body>
+</html>
