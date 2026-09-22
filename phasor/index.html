@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rotating Phasor → Sinusoid</title>
+<style>
+  body{font-family:Arial,sans-serif;max-width:950px;margin:25px auto;padding:0 18px;color:#222}
+  h1{margin-bottom:5px}
+  .subtitle{color:#666;margin-bottom:22px}
+  .control{border:1px solid #ddd;border-radius:12px;padding:16px;margin-bottom:15px}
+  input[type=range]{width:100%;margin-top:12px}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:15px 0}
+  .card{border:1px solid #ddd;border-radius:10px;padding:12px;background:#f7f7f7}
+  .label{font-size:12px;color:#666}
+  .value{font-size:19px;font-weight:700;margin-top:4px}
+  .equation{background:#f7f7f7;border-radius:10px;padding:14px;margin:10px 0;font-size:18px}
+  .graphs{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+  .graph{border:1px solid #ddd;border-radius:12px;padding:10px}
+  .graph-title{font-weight:700;margin-bottom:5px}
+  .graph-subtitle{font-size:12px;color:#666;margin-bottom:7px}
+  svg{width:100%;height:auto;display:block;background:white}
+  .explanation{margin-top:15px;padding:14px;border-radius:10px;background:#f3f6fa}
+  @media(max-width:700px){.cards{grid-template-columns:1fr 1fr}.graphs{grid-template-columns:1fr}}
+  @media(max-width:450px){.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>Rotating Phasor → Sinusoid</h1>
+<div class="subtitle">
+  Change the frequency and watch the phasor rotate faster and generate the cosine waveform.
+</div>
+
+<div class="control">
+  <label>
+    <strong>Frequency, f = </strong>
+    <span id="freqValue">2.0</span> Hz
+  </label>
+  <input id="frequency" type="range" min="0.1" max="100" step="0.1" value="2">
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Frequency</div>
+    <div class="value" id="fOut">2.0 Hz</div>
+  </div>
+  <div class="card">
+    <div class="label">Angular frequency ω</div>
+    <div class="value" id="omegaOut">4.00π rad/s</div>
+  </div>
+  <div class="card">
+    <div class="label">Period T</div>
+    <div class="value" id="periodOut">0.500 s</div>
+  </div>
+  <div class="card">
+    <div class="label">Current phase θ</div>
+    <div class="value" id="phaseOut">0°</div>
+  </div>
+</div>
+
+<div class="equation">
+  <strong>Euler's formula:</strong>
+  &nbsp; e<sup>jθ</sup> = cos(θ) + j sin(θ)
+</div>
+
+<div class="equation">
+  <strong>Angular-frequency relation:</strong>
+  &nbsp; ω = 2πf
+  &nbsp;&nbsp; → &nbsp;&nbsp;
+  <span id="relationOut">ω = 4.00π rad/s</span>
+</div>
+
+<div class="equation">
+  <strong>Generated sinusoid:</strong>
+  &nbsp; x(t) = cos(ωt) = cos(<span id="cosCoeff">4.00π</span>t)
+</div>
+
+<div class="graphs">
+
+  <div class="graph">
+    <div class="graph-title">Rotating phasor</div>
+    <div class="graph-subtitle">
+      The vector rotates counter-clockwise. Its real part is cos(θ).
+    </div>
+    <svg id="phasorGraph" viewBox="0 0 420 390"></svg>
+  </div>
+
+  <div class="graph">
+    <div class="graph-title">Cosine waveform</div>
+    <div class="graph-subtitle">
+      The blue point is the projection of the rotating phasor.
+    </div>
+    <svg id="waveGraph" viewBox="0 0 420 390"></svg>
+  </div>
+
+</div>
+
+<div class="explanation">
+  <strong>What to observe:</strong>
+  Increasing <em>f</em> increases ω. The phasor therefore rotates faster,
+  and the cosine waveform completes more cycles per second.
+</div>
+
+<script>
+const slider = document.getElementById("frequency");
+
+const freqValue = document.getElementById("freqValue");
+const fOut = document.getElementById("fOut");
+const omegaOut = document.getElementById("omegaOut");
+const periodOut = document.getElementById("periodOut");
+const phaseOut = document.getElementById("phaseOut");
+const relationOut = document.getElementById("relationOut");
+const cosCoeff = document.getElementById("cosCoeff");
+
+const phasorGraph = document.getElementById("phasorGraph");
+const waveGraph = document.getElementById("waveGraph");
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+let phase = 0;
+let lastTime = performance.now();
+
+function svgElement(type, attrs) {
+  const e = document.createElementNS(SVG_NS, type);
+  for (const key in attrs) e.setAttribute(key, attrs[key]);
+  return e;
+}
+
+function addText(svg, x, y, content, size=12) {
+  const t = svgElement("text", {
+    x:x,
+    y:y,
+    "text-anchor":"middle",
+    "font-size":size,
+    fill:"#666"
+  });
+  t.textContent = content;
+  svg.appendChild(t);
+}
+
+function drawPhasor(theta) {
+
+  phasorGraph.replaceChildren();
+
+  const cx = 210;
+  const cy = 190;
+  const R = 125;
+
+  // Outer circle
+  phasorGraph.appendChild(svgElement("circle", {
+    cx, cy, r:R,
+    fill:"none",
+    stroke:"#aaa",
+    "stroke-width":"1.5"
+  }));
+
+  // Axes
+  phasorGraph.appendChild(svgElement("line", {
+    x1:cx-R-25, y1:cy,
+    x2:cx+R+25, y2:cy,
+    stroke:"#aaa"
+  }));
+
+  phasorGraph.appendChild(svgElement("line", {
+    x1:cx, y1:cy-R-25,
+    x2:cx, y2:cy+R+25,
+    stroke:"#aaa"
+  }));
+
+  addText(phasorGraph, cx+R+30, cy+4, "Re");
+  addText(phasorGraph, cx, cy-R-35, "Im");
+
+  // Current point
+  const px = cx + R*Math.cos(theta);
+  const py = cy - R*Math.sin(theta);
+
+  // Projection onto real axis
+  phasorGraph.appendChild(svgElement("line", {
+    x1:px, y1:py,
+    x2:px, y2:cy,
+    stroke:"#888",
+    "stroke-dasharray":"5 4"
+  }));
+
+  // Phasor
+  phasorGraph.appendChild(svgElement("line", {
+    x1:cx, y1:cy,
+    x2:px, y2:py,
+    stroke:"#2563eb",
+    "stroke-width":"4"
+  }));
+
+  phasorGraph.appendChild(svgElement("circle", {
+    cx:px, cy:py, r:8,
+    fill:"#2563eb"
+  }));
+
+  // Angle arc
+  const arcR = 48;
+  const ax = cx + arcR*Math.cos(theta);
+  const ay = cy - arcR*Math.sin(theta);
+
+  phasorGraph.appendChild(svgElement("path", {
+    d:`M ${cx+arcR} ${cy}
+       A ${arcR} ${arcR} 0 0 0 ${ax} ${ay}`,
+    fill:"none",
+    stroke:"#d97706",
+    "stroke-width":"2"
+  }));
+
+  addText(phasorGraph, cx, cy+R+45,
+          `e^(jθ) = cos(${formatAngle(theta)}) + j sin(${formatAngle(theta)})`, 13);
+
+  addText(phasorGraph, cx, cy+R+65,
+          `θ = ${formatDegrees(theta)}`, 13);
+}
+
+function drawWave(theta, F) {
+
+  waveGraph.replaceChildren();
+
+  const left = 38;
+  const right = 402;
+  const top = 55;
+  const bottom = 330;
+  const mid = 190;
+  const amp = 105;
+
+  // Axes
+  waveGraph.appendChild(svgElement("line", {
+    x1:left, y1:mid,
+    x2:right, y2:mid,
+    stroke:"#aaa"
+  }));
+
+  waveGraph.appendChild(svgElement("line", {
+    x1:left, y1:top,
+    x2:left, y2:bottom,
+    stroke:"#aaa"
+  }));
+
+  addText(waveGraph, 220, 35, "x(t) = cos(ωt)", 14);
+  addText(waveGraph, right-8, mid-8, "t", 12);
+  addText(waveGraph, left-18, top+5, "+1", 11);
+  addText(waveGraph, left-18, mid+4, "0", 11);
+  addText(waveGraph, left-18, bottom, "-1", 11);
+
+  /*
+    Show two periods.
+    At high frequency the actual time window becomes short,
+    allowing the waveform to remain visually readable.
+  */
+
+  const duration = 2 / F;
+
+  let path = "";
+
+  for(let i=0; i<=700; i++) {
+
+    const t = duration*i/700;
+
+    const x = left + (right-left)*i/700;
+
+    const value = Math.cos(2*Math.PI*F*t);
+
+    const y = mid - amp*value;
+
+    path += (i===0 ? "M" : "L") +
+            x.toFixed(2) + "," +
+            y.toFixed(2);
+  }
+
+  waveGraph.appendChild(svgElement("path", {
+    d:path,
+    fill:"none",
+    stroke:"#16a34a",
+    "stroke-width":"3"
+  }));
+
+  // Current time corresponding to phase
+  let normalizedPhase =
+      ((theta % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+
+  const currentT =
+      normalizedPhase / (2*Math.PI*F);
+
+  const wx =
+      left + (right-left)*(currentT/duration);
+
+  const wy =
+      mid - amp*Math.cos(normalizedPhase);
+
+  // Projection line
+  waveGraph.appendChild(svgElement("line", {
+    x1:wx, y1:mid,
+    x2:wx, y2:wy,
+    stroke:"#2563eb",
+    "stroke-width":"2"
+  }));
+
+  waveGraph.appendChild(svgElement("circle", {
+    cx:wx, cy:wy, r:7,
+    fill:"#2563eb"
+  }));
+
+  addText(
+    waveGraph,
+    220,
+    365,
+    `Current value = cos(θ) = ${Math.cos(theta).toFixed(3)}`,
+    13
+  );
+}
+
+function formatDegrees(theta) {
+  let degrees = theta * 180 / Math.PI;
+  degrees = ((degrees % 360) + 360) % 360;
+  return degrees.toFixed(1) + "°";
+}
+
+function formatAngle(theta) {
+  const ratio = theta / Math.PI;
+  return ratio.toFixed(2) + "π";
+}
+
+function updateDisplays(F) {
+
+  const omega = 2*Math.PI*F;
+  const period = 1/F;
+
+  freqValue.textContent = F.toFixed(1);
+  fOut.textContent = F.toFixed(1) + " Hz";
+
+  omegaOut.textContent =
+      (omega/Math.PI).toFixed(2) + "π rad/s";
+
+  relationOut.textContent =
+      "ω = " + (omega/Math.PI).toFixed(2) + "π rad/s";
+
+  cosCoeff.textContent =
+      (omega/Math.PI).toFixed(2) + "π";
+
+  periodOut.textContent =
+      period.toFixed(4) + " s";
+
+  phaseOut.textContent =
+      formatDegrees(phase);
+}
+
+function draw() {
+
+  const F = Number(slider.value);
+
+  updateDisplays(F);
+  drawPhasor(phase);
+  drawWave(phase, F);
+}
+
+function animate(now) {
+
+  const F = Number(slider.value);
+
+  const dt = Math.min((now-lastTime)/1000, 0.05);
+
+  lastTime = now;
+
+  /*
+    θ increases according to:
+        θ = ωt
+        ω = 2πF
+
+    Therefore increasing F makes the phasor rotate faster.
+  */
+
+  phase += 2*Math.PI*F*dt;
+
+  draw();
+
+  requestAnimationFrame(animate);
+}
+
+slider.addEventListener("input", draw);
+
+draw();
+
+requestAnimationFrame(animate);
+
+</script>
+
+</body>
+</html>
